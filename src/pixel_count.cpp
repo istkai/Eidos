@@ -1,3 +1,11 @@
 #include "pixel_count.hpp"
 
-int calculate_pixel_count(int width, int height) { return width * height; }
+#include <cstdint>
+
+namespace eidos {
+
+std::int64_t calculate_pixel_count(Extent2D extent) {
+  return static_cast<std::int64_t>(extent.width) * extent.height;
+}
+
+} // namespace eidos

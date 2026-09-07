@@ -5,6 +5,7 @@ project(Eidos LANGUAGES CXX)
 add_executable(eidos
     src/main.cpp
     src/pixel_count.cpp
+    src/extent.cpp
 )
 
 target_compile_features(eidos PRIVATE cxx_std_20)
