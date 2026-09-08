@@ -1,95 +1,244 @@
-#include <cstdint>
+#include <array>
+#include <iomanip>
 #include <iostream>
-#include <limits>
+#include <memory>
 
+#include <SDL3/SDL.h>
+#include <SDL3/SDL_main.h>
+
+#include "draw_scene.hpp"
 #include "extent.hpp"
-#include "pixel_count.hpp"
 
-int main() {
-  const eidos::Extent2D resolution{
-      .width = 1920,
-      .height = 1080,
-  };
+struct SdlShutdown {
+  SdlShutdown() = default;
 
-  eidos::Extent2D scaled{resolution};
+  SdlShutdown(const SdlShutdown &) = delete;
+  SdlShutdown &operator=(const SdlShutdown &) = delete;
 
-  if (eidos::try_scale_extent(scaled, 2) != eidos::ScaleResult::Success) {
-    std::cerr << "Could not scale the extent." << '\n';
+  ~SdlShutdown() {
+    std::cout << "Shutting down SDL..." << '\n';
+
+    SDL_Quit();
+  }
+};
+
+struct WindowDeleter {
+  void operator()(SDL_Window *window) const {
+    std::cout << "Closing window..." << '\n';
+    SDL_DestroyWindow(window);
+  }
+};
+
+struct RendererDeleter {
+  void operator()(SDL_Renderer *renderer) const {
+    std::cout << "Dropping renderer..." << '\n';
+    SDL_DestroyRenderer(renderer);
+  }
+};
+
+using Eidos_Window = std::unique_ptr<SDL_Window, WindowDeleter>;
+using Eidos_Renderer = std::unique_ptr<SDL_Renderer, RendererDeleter>;
+
+int main(int, char *[]) {
+  if (!SDL_Init(SDL_INIT_VIDEO)) {
+    std::cerr << "SDL initialization failed: " << SDL_GetError() << '\n';
+
+    SDL_Quit();
 
     return 1;
+  }
+
+  SdlShutdown sdl_shutdown{};
+
+  Eidos_Window window{SDL_CreateWindow("Eidos", 960, 540, 0)};
+
+  if (window == nullptr) {
+    std::cerr << "Window creation failed: " << SDL_GetError() << '\n';
+
+    return 1;
+  }
+
+  Eidos_Renderer renderer{SDL_CreateRenderer(window.get(), nullptr)};
+
+  if (renderer == nullptr) {
+    std::cerr << "Renderer creation failed: " << SDL_GetError() << '\n';
+
+    return 1;
+  }
+
+  if (!SDL_SetRenderVSync(renderer.get(), 1)) {
+    std::cerr << "Enabling VSync failed: " << SDL_GetError() << '\n';
+
+    return 1;
+  }
+
+  const char *video_driver{SDL_GetCurrentVideoDriver()};
+  const char *renderer_name{SDL_GetRendererName(renderer.get())};
+
+  if (video_driver != nullptr) {
+    std::cout << "Video driver: " << video_driver << '\n';
+  }
+
+  if (renderer_name != nullptr) {
+    std::cout << "Renderer: " << renderer_name << '\n' << '\n';
+  }
+
+  SDL_FRect rectangle{
+      .x = 100.0f,
+      .y = 80.0f,
+      .w = 240.0f,
+      .h = 140.0f,
   };
 
-  const std::int64_t original_pixel_count{
-      eidos::calculate_pixel_count(resolution)};
-  const std::int64_t scaled_pixel_count{eidos::calculate_pixel_count(scaled)};
+  const float horizontal_speed{1500.0f};
+  float horizontal_velocity{horizontal_speed};
 
-  std::cout << "Eidos initializing..." << '\n';
+  Uint64 previous_ticks{SDL_GetTicksNS()};
 
-  std::cout << "Original: " << resolution.width << " x " << resolution.height
-            << '\n';
+  Uint64 report_start_ticks{previous_ticks};
+  int frames_since_report{0};
 
-  std::cout << "Original pixel count: " << original_pixel_count << '\n';
+  bool running{true};
+  bool paused{false};
 
-  std::cout << "Scaled: " << scaled.width << " x " << scaled.height << '\n';
+  while (running) {
+    SDL_Event event{};
 
-  std::cout << "Scaled pixel count: " << scaled_pixel_count << '\n';
+    while (SDL_PollEvent(&event)) {
+      if (event.type == SDL_EVENT_QUIT) {
+        running = false;
+      } else if (event.type == SDL_EVENT_KEY_DOWN && !event.key.repeat) {
+        switch (event.key.key) {
+        case SDLK_SPACE:
+          paused = !paused;
+          break;
 
-  const eidos::Extent2D large_extent{70'000, 70'000};
+        case SDLK_R:
+          horizontal_velocity = -horizontal_velocity;
+          break;
 
-  const std::int64_t large_pixel_count{
-      eidos::calculate_pixel_count(large_extent)};
+        case SDLK_ESCAPE:
+        case SDLK_Q:
+          running = false;
+          break;
 
-  std::cout << "Large pixel count: " << large_pixel_count << '\n';
+        default:
+          break;
+        }
+      }
+    }
 
-  eidos::Extent2D oversized{1, std::numeric_limits<int>::max()};
+    if (!running) {
+      std::cout << '\n' << '\n';
 
-  const bool success{eidos::try_scale_extent(oversized, 2) ==
-                     eidos::ScaleResult::Success};
+      break;
+    }
 
-  std::cout << std::boolalpha << "Scaling succeeded: " << success << '\n';
-  std::cout << "Extent afterwards: " << oversized.width << " x "
-            << oversized.height << '\n';
+    const Uint64 current_ticks{SDL_GetTicksNS()};
 
-  eidos::Extent2D scaled_by_zero{1920, 1080};
-  eidos::Extent2D scaled_by_minus_one{scaled_by_zero};
+    const float delta_seconds{
+        static_cast<float>(current_ticks - previous_ticks) / 1'000'000'000.0f};
 
-  const bool zero_success{eidos::try_scale_extent(scaled_by_zero, 0) ==
-                          eidos::ScaleResult::Success};
-  const bool minus_one_success{
-      eidos::try_scale_extent(scaled_by_minus_one, -1) ==
-      eidos::ScaleResult::Success};
+    previous_ticks = current_ticks;
 
-  std::cout << std::boolalpha
-            << "Zero-factor scaling succeeded: " << zero_success << '\n';
-  std::cout << "Extent afterwards: " << scaled_by_zero.width << " x "
-            << scaled_by_zero.height << '\n';
+    eidos::Extent2D output_size{};
 
-  std::cout << std::boolalpha
-            << "Minus-one-factor scaling succeeded: " << minus_one_success
-            << '\n';
-  std::cout << "Extent afterwards: " << scaled_by_minus_one.width << " x "
-            << scaled_by_minus_one.height << '\n';
+    if (!SDL_GetRenderOutputSize(renderer.get(), &output_size.width,
+                                 &output_size.height)) {
+      std::cerr << "Reading output size failed: " << SDL_GetError() << '\n';
 
-  eidos::Extent2D invalid{-1920, 1080};
+      return 1;
+    }
 
-  const eidos::ScaleResult result{eidos::try_scale_extent(invalid, -1)};
+    const float maximum_x{static_cast<float>(output_size.width) - rectangle.w};
 
-  switch (result) {
-  case eidos::ScaleResult::Success:
-    std::cout << "Scaling succeeded." << '\n';
-    break;
+    if (!paused) {
+      if (maximum_x <= 0.0f) {
+        rectangle.x = 0.0f;
+        horizontal_velocity = horizontal_speed;
+      } else {
+        rectangle.x += horizontal_velocity * delta_seconds;
 
-  case eidos::ScaleResult::NegativeDimension:
-    std::cout << "Dimensions must be non-negative." << '\n';
-    break;
+        while (rectangle.x < 0.0f || rectangle.x > maximum_x) {
+          if (rectangle.x > maximum_x) {
+            const float overshoot{rectangle.x - maximum_x};
 
-  case eidos::ScaleResult::NegativeFactor:
-    std::cout << "The scale factor must be non-negative." << '\n';
-    break;
+            rectangle.x = maximum_x - overshoot;
+            horizontal_velocity = -horizontal_speed;
+          } else {
+            rectangle.x = -rectangle.x;
+            horizontal_velocity = horizontal_speed;
+          }
+        }
 
-  case eidos::ScaleResult::Overflow:
-    std::cout << "The scaled dimensions would exceed int." << '\n';
-    break;
+        if (rectangle.x == 0.0f) {
+          horizontal_velocity = horizontal_speed;
+        } else if (rectangle.x == maximum_x) {
+          horizontal_velocity = -horizontal_speed;
+        }
+      }
+    }
+
+    const std::array<eidos::ColoredRectangle, 3> scene_rectangles{
+        // Green Rectangle
+        eidos::ColoredRectangle{
+            .bounds =
+                {
+                    .x = 100.0f,
+                    .y = 150.0f,
+                    .w = 160.0f,
+                    .h = 80.0f,
+                },
+            .color = {.r = 70, .g = 200, .b = 130, .a = 128},
+        },
+
+        // Orange Rectangle
+        eidos::ColoredRectangle{
+            .bounds = rectangle,
+            .color = {.r = 240, .g = 150, .b = 50, .a = 255},
+        },
+
+        // Purple Rectangle
+        eidos::ColoredRectangle{
+            .bounds =
+                {
+                    .x = 500.0f,
+                    .y = 300.0f,
+                    .w = 80.0f,
+                    .h = 160.0f,
+                },
+            .color = {.r = 170, .g = 110, .b = 230, .a = 255},
+        },
+    };
+
+    if (!eidos::draw_scene(*renderer, scene_rectangles)) {
+      std::cerr << "Drawing failed: " << SDL_GetError() << '\n';
+
+      return 1;
+    }
+
+    ++frames_since_report;
+
+    const Uint64 report_ticks{SDL_GetTicksNS()};
+
+    const double report_seconds{
+        static_cast<double>(report_ticks - report_start_ticks) /
+        1'000'000'000.0};
+
+    if (report_seconds >= 1.0) {
+      const double frames_per_second{frames_since_report / report_seconds};
+
+      const double average_frame_ms{report_seconds * 1000.0 /
+                                    frames_since_report};
+
+      std::cout << std::fixed << std::setprecision(0) << '\r'
+                << "FPS: " << std::setw(4) << frames_per_second
+                << " | Average frametime: " << std::setprecision(1)
+                << std::setw(5) << average_frame_ms << " ms" << std::flush;
+
+      frames_since_report = 0;
+      report_start_ticks = report_ticks;
+    }
   }
 
   return 0;
