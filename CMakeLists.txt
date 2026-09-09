@@ -9,6 +9,7 @@ add_executable(eidos
     src/pixel_count.cpp
     src/extent.cpp
     src/draw_scene.cpp
+    src/motion.cpp
 )
 
 target_link_libraries(eidos PRIVATE SDL3::SDL3)
@@ -34,3 +35,15 @@ set_target_properties(extent_tests PROPERTIES
 )
 
 add_test(NAME extent_scaling COMMAND extent_tests)
+
+add_executable(motion_tests
+    tests/motion_tests.cpp
+    src/motion.cpp
+)
+
+target_include_directories(motion_tests PRIVATE src)
+target_compile_features(motion_tests PRIVATE cxx_std_20)
+
+set_target_properties(motion_tests PROPERTIES CXX_EXTENSIONS OFF)
+
+add_test(NAME horizontal_motion COMMAND motion_tests)

@@ -8,6 +8,7 @@
 
 #include "draw_scene.hpp"
 #include "extent.hpp"
+#include "motion.hpp"
 
 struct SdlShutdown {
   SdlShutdown() = default;
@@ -90,8 +91,10 @@ int main(int, char *[]) {
       .h = 140.0f,
   };
 
-  const float horizontal_speed{1500.0f};
-  float horizontal_velocity{horizontal_speed};
+  eidos::Motion1D horizontal_motion{
+      .position = rectangle.x,
+      .velocity = 1500.0f,
+  };
 
   Uint64 previous_ticks{SDL_GetTicksNS()};
 
@@ -114,7 +117,7 @@ int main(int, char *[]) {
           break;
 
         case SDLK_R:
-          horizontal_velocity = -horizontal_velocity;
+          horizontal_motion.velocity = -horizontal_motion.velocity;
           break;
 
         case SDLK_ESCAPE:
@@ -153,31 +156,10 @@ int main(int, char *[]) {
     const float maximum_x{static_cast<float>(output_size.width) - rectangle.w};
 
     if (!paused) {
-      if (maximum_x <= 0.0f) {
-        rectangle.x = 0.0f;
-        horizontal_velocity = horizontal_speed;
-      } else {
-        rectangle.x += horizontal_velocity * delta_seconds;
-
-        while (rectangle.x < 0.0f || rectangle.x > maximum_x) {
-          if (rectangle.x > maximum_x) {
-            const float overshoot{rectangle.x - maximum_x};
-
-            rectangle.x = maximum_x - overshoot;
-            horizontal_velocity = -horizontal_speed;
-          } else {
-            rectangle.x = -rectangle.x;
-            horizontal_velocity = horizontal_speed;
-          }
-        }
-
-        if (rectangle.x == 0.0f) {
-          horizontal_velocity = horizontal_speed;
-        } else if (rectangle.x == maximum_x) {
-          horizontal_velocity = -horizontal_speed;
-        }
-      }
+      eidos::advance_motion(horizontal_motion, delta_seconds, maximum_x);
     }
+
+    rectangle.x = horizontal_motion.position;
 
     const std::array<eidos::ColoredRectangle, 3> scene_rectangles{
         // Green Rectangle
