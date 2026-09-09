@@ -9,6 +9,14 @@
 #include "draw_scene.hpp"
 #include "extent.hpp"
 
+/// ANSI code - moves the cursor one unit up
+#define CURSOR_MOVE_UP "\033[1A"
+/// ANSI code - moves the cursor one unit down
+#define CURSOR_MOVE_DOWN "\033[1B"
+/// ANSI code - moves the cursor to the end of the line by moving 999 units to
+/// the right
+#define CURSOR_MOVE_ENDL "\033[999C"
+
 struct SdlShutdown {
   SdlShutdown() = default;
 
@@ -38,9 +46,10 @@ struct RendererDeleter {
 
 using Eidos_Window = std::unique_ptr<SDL_Window, WindowDeleter>;
 using Eidos_Renderer = std::unique_ptr<SDL_Renderer, RendererDeleter>;
+using Eidos_VSync = std::unique_ptr<int>;
 
 int main(int, char *[]) {
-  if (!SDL_Init(SDL_INIT_VIDEO)) {
+  if (!SDL_InitSubSystem(SDL_INIT_VIDEO)) {
     std::cerr << "SDL initialization failed: " << SDL_GetError() << '\n';
 
     SDL_Quit();
@@ -66,7 +75,9 @@ int main(int, char *[]) {
     return 1;
   }
 
-  if (!SDL_SetRenderVSync(renderer.get(), 1)) {
+  Eidos_VSync vsync{std::make_unique<int>(SDL_RENDERER_VSYNC_DISABLED)};
+
+  if (!SDL_SetRenderVSync(renderer.get(), *vsync)) {
     std::cerr << "Enabling VSync failed: " << SDL_GetError() << '\n';
 
     return 1;
@@ -80,7 +91,8 @@ int main(int, char *[]) {
   }
 
   if (renderer_name != nullptr) {
-    std::cout << "Renderer: " << renderer_name << '\n' << '\n';
+    std::cout << "Renderer: " << renderer_name << CURSOR_MOVE_DOWN << '\n'
+              << '\n';
   }
 
   SDL_FRect rectangle{
@@ -90,7 +102,7 @@ int main(int, char *[]) {
       .h = 140.0f,
   };
 
-  const float horizontal_speed{1500.0f};
+  const float horizontal_speed{750.0f};
   float horizontal_velocity{horizontal_speed};
 
   Uint64 previous_ticks{SDL_GetTicksNS()};
@@ -115,6 +127,34 @@ int main(int, char *[]) {
 
         case SDLK_R:
           horizontal_velocity = -horizontal_velocity;
+          break;
+
+        case SDLK_V:
+          switch (*vsync) {
+          case SDL_RENDERER_VSYNC_DISABLED:
+            if (!SDL_SetRenderVSync(renderer.get(),
+                                    SDL_RENDERER_VSYNC_ADAPTIVE)) {
+              std::cerr << "Setting VSync failed: " << SDL_GetError() << '\n';
+            } else {
+              *vsync = SDL_RENDERER_VSYNC_ADAPTIVE;
+            }
+
+            break;
+
+          case SDL_RENDERER_VSYNC_ADAPTIVE:
+            if (!SDL_SetRenderVSync(renderer.get(),
+                                    SDL_RENDERER_VSYNC_DISABLED)) {
+              std::cerr << "Setting VSync failed: " << SDL_GetError() << '\n';
+            } else {
+              *vsync = SDL_RENDERER_VSYNC_DISABLED;
+            }
+
+            break;
+
+          default:
+            break;
+          }
+
           break;
 
         case SDLK_ESCAPE:
@@ -231,10 +271,15 @@ int main(int, char *[]) {
       const double average_frame_ms{report_seconds * 1000.0 /
                                     frames_since_report};
 
-      std::cout << std::fixed << std::setprecision(0) << '\r'
+      const std::string vsync_state{
+          *vsync == SDL_RENDERER_VSYNC_DISABLED ? "disabled" : "enabled "};
+
+      std::cout << std::fixed << std::setprecision(0) << CURSOR_MOVE_UP << '\r'
                 << "FPS: " << std::setw(4) << frames_per_second
                 << " | Average frametime: " << std::setprecision(1)
-                << std::setw(5) << average_frame_ms << " ms" << std::flush;
+                << std::setw(5) << average_frame_ms << " ms" << std::endl;
+
+      std::cout << "VSync " << vsync_state << std::flush;
 
       frames_since_report = 0;
       report_start_ticks = report_ticks;
